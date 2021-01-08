@@ -1,260 +1,257 @@
-﻿Imports System.IO.Ports
-'Author: Mostafa Soghandi
-'Email: Mostafa.soghandi@gmail.com
-Public Class USSCLASS
-    Public Event RData(ByVal sender As Object, ByVal e As EventArgs)
+using System;
+using System.IO.Ports;
 
-    Dim MSComm1 As New SerialPort("COM1", 19200, Parity.Even, 8, StopBits.One)
+// Author: Mostafa Soghandi
+// Email: Mostafa.soghandi@gmail.com
 
-    Public Sub PortOpen()
-        MSComm1.ReadBufferSize = 512
-        MSComm1.WriteBufferSize = 512
-        MSComm1.ReceivedBytesThreshold = 15
-        MSComm1.DtrEnable = True
-        MSComm1.RtsEnable = True
-        AddHandler MSComm1.DataReceived, AddressOf RecieveData
-        MSComm1.Open()
-    End Sub
-    Public RcvStr As String = ""
-    Public Function RecieveData() As Boolean
-        Dim i%, buf
-        Dim hexdisp As String = Nothing
-        Dim inByte(127) As Byte
-        buf = ""
-        MSComm1.Read(inByte, 0, 127)
+namespace Uss
+{
+    public class UssModule
+    {
+        public event EventHandler<string> ReceiveDataHandler;
 
-        Dim jm As Integer = inByte(1).ToString()
-        For i = 0 To jm - 1
-            buf = buf + IIf(inByte(i) > 15, Hex(inByte(i)), "0" + Hex(inByte(i))) + Chr(32)
-        Next i
-        hexdisp = hexdisp + buf
-        RcvStr = jm.ToString + ":" + hexdisp.ToString
-        RaiseEvent RData(Me, New System.EventArgs)
-    End Function
+        private void OnReceiveData(object sender, string data)
+        {
+            EventHandler<string> handler = ReceiveDataHandler;
+            handler?.Invoke(sender, data);
+        }
 
-    Public Sub PortClose()
-        MSComm1.Close()
-    End Sub
+        private readonly SerialPort _msComm1 = new SerialPort("COM1", 19200, Parity.Even, 8, StopBits.One);
 
-    Public Function RunMMS(ByVal Freq As Integer, ByVal Address As Integer) As Boolean
-        Dim i(15) As Byte
-        Dim j As Integer
-        Dim Pin As Single
-        Dim PinH As String = ""
-        Dim PinL As String = ""
-        Pin = Freq * 16384 / 50
+        public void PortOpen()
+        {
+            if (_msComm1.IsOpen) return;
+            _msComm1.ReadBufferSize = 512;
+            _msComm1.WriteBufferSize = 512;
+            _msComm1.ReceivedBytesThreshold = 15;
+            _msComm1.DtrEnable = true;
+            _msComm1.RtsEnable = true;
+            _msComm1.DataReceived += RecieveData;
+            _msComm1.Open();
+        }
 
-        If Len(Hex(Pin)) = 4 Then
-            PinH = Mid(Hex(Pin), 1, 2)
-            PinL = Mid(Hex(Pin), 3, 2)
-        End If
+        private void RecieveData(object sender, SerialDataReceivedEventArgs serialDataReceivedEventArgs)
+        {
+            var inByte = new byte[128];
+            string buf = "";
+            _msComm1.Read(inByte, 0, 127);
+            int jm = Convert.ToInt32(inByte[1].ToString());
+            var loopTo = jm - 1;
+            for (int i = 0; i <= loopTo; i++)
+            {
+                buf = buf + (inByte[i] > 15 ? inByte[i].ToString("X") : "0" + inByte[i].ToString("X")) + ' ';
+            }
 
-        If Len(Hex(Pin)) < 4 Then
-            PinH = Mid(Hex(Pin), 1, 1)
-            PinL = Mid(Hex(Pin), 2, 2)
-        End If
+            buf = Convert.ToString(buf);
+            string rcvStr = jm + ":" + buf;
+            OnReceiveData(this, rcvStr);
+        }
 
-        i(0) = &H2
-        i(1) = &HE
-        i(2) = "&H" & Hex(Address).ToString
-        MsgBox(i(2))
-        i(3) = &H0
-        i(4) = &H0
-        i(5) = &H0
-        i(6) = &H0
-        i(7) = &H0
-        i(8) = &H0
-        i(9) = &H0
-        i(10) = &H0
+        public void PortClose()
+        {
+            _msComm1.Close();
+        }
 
-        i(11) = &H4
-        i(12) = &H7F
-        i(13) = "&H" & PinH.ToString
-        i(14) = "&H" & PinL.ToString
+        public void RunMms(int freq, int address)
+        {
+            var i = new byte[16];
+            string pinH = "";
+            string pinL = "";
+            var pin = (float) (freq * 16384 / 50d);
+            if (pin.ToString("X").Length == 4)
+            {
+                pinH = pin.ToString("X").Substring(1, 2);
+                pinL = pin.ToString("X").Substring(3, 2);
+            }
 
-        For j = 0 To 14
-            i(15) = i(15) Xor i(j)
-        Next j
-        MSComm1.Write(i, 0, i.Length)
-    End Function
+            if (pin.ToString("X").Length < 4)
+            {
+                pinH = pin.ToString("X").Substring(1, 1);
+                pinL = pin.ToString("X").Substring(2, 2);
+            }
 
-    Public Function StopRunning(ByVal Address As Integer) As Boolean
-        Dim i(15) As Byte
-        Dim j As Integer
-        i(0) = &H2
-        i(1) = &HE
-        i(2) = "&H" & Hex(Address).ToString
+            i[0] = 0x2;
+            i[1] = 0xE;
+            i[2] = Convert.ToByte("&H" + address.ToString("X"));
+            i[3] = 0x0;
+            i[4] = 0x0;
+            i[5] = 0x0;
+            i[6] = 0x0;
+            i[7] = 0x0;
+            i[8] = 0x0;
+            i[9] = 0x0;
+            i[10] = 0x0;
+            i[11] = 0x4;
+            i[12] = 0x7F;
+            i[13] = Convert.ToByte("&H" + pinH);
+            i[14] = Convert.ToByte("&H" + pinL);
+            for (int j = 0; j <= 14; j++)
+                i[15] = (byte) (i[15] ^ i[j]);
+            _msComm1.Write(i, 0, i.Length);
+        }
 
-        i(3) = &H0
-        i(4) = &H0
-        i(5) = &H0
-        i(6) = &H0
-        i(7) = &H0
-        i(8) = &H0
-        i(9) = &H0
-        i(10) = &H0
+        public void StopRunning(int address)
+        {
+            var i = new byte[16];
+            int j;
+            i[0] = 0x2;
+            i[1] = 0xE;
+            i[2] = Convert.ToByte("&H" + address.ToString("X"));
+            i[3] = 0x0;
+            i[4] = 0x0;
+            i[5] = 0x0;
+            i[6] = 0x0;
+            i[7] = 0x0;
+            i[8] = 0x0;
+            i[9] = 0x0;
+            i[10] = 0x0;
+            i[11] = 0x4;
+            i[12] = 0x7E;
+            i[13] = 0x0;
+            i[14] = 0x0;
+            for (j = 0; j <= 14; j++)
+                i[15] = (byte) (i[15] ^ i[j]);
+            _msComm1.Write(i, 0, i.Length);
+        }
 
-        i(11) = &H4
-        i(12) = &H7E
-        i(13) = &H0
-        i(14) = &H0
+        public bool ReverseRun(int freq, int address)
+        {
+            var i = new byte[16];
+            int j;
+            string pinH = "";
+            string pinL = "";
+            var pin = (float) (freq * 16384d / 50d);
+            if (pin.ToString("X").Length == 4)
+            {
+                pinH = pin.ToString("X").Substring(1, 2);
+                pinL = pin.ToString("X").Substring(3, 2);
+            }
 
-        For j = 0 To 14
-            i(15) = i(15) Xor i(j)
-        Next j
-        MSComm1.Write(i, 0, i.Length)
-    End Function
+            if (pin.ToString("X").Length < 4)
+            {
+                pinH = pin.ToString("X").Substring(1, 1);
+                pinL = pin.ToString("X").Substring(2, 2);
+            }
 
-    Public Function ReverseRun(ByVal Freq As Integer, ByVal Address As Integer) As Boolean
-        Dim i(15) As Byte
-        Dim j As Integer
-        Dim Pin As Single
-        Dim PinH As String = ""
-        Dim PinL As String = ""
-        Pin = Val(Freq) * 16384 / 50
+            i[0] = 0x2;
+            i[1] = 0xE;
+            i[2] = Convert.ToByte("&H" + address.ToString("X"));
+            i[3] = 0x0;
+            i[4] = 0x0;
+            i[5] = 0x0;
+            i[6] = 0x0;
+            i[7] = 0x0;
+            i[8] = 0x0;
+            i[9] = 0x0;
+            i[10] = 0x0;
+            i[11] = 0xC;
+            i[12] = 0x7F;
+            i[13] = Convert.ToByte("&H" + pinH);
+            i[14] = Convert.ToByte("&H" + pinL);
+            for (j = 0; j <= 14; j++)
+                i[15] = (byte) (i[15] ^ i[j]);
+            _msComm1.Write(i, 0, i.Length);
+            return default;
+        }
 
-        If Len(Hex(Pin)) = 4 Then
-            PinH = Mid(Hex(Pin), 1, 2)
-            PinL = Mid(Hex(Pin), 3, 2)
-        End If
+        public bool RunMMSOnJOGMode(int address)
+        {
+            var i = new byte[16];
+            int j;
+            i[0] = 0x2;
+            i[1] = 0xE;
+            i[2] = Convert.ToByte("&H" + address.ToString("X"));
+            i[3] = 0x0;
+            i[4] = 0x0;
+            i[5] = 0x0;
+            i[6] = 0x0;
+            i[7] = 0x0;
+            i[8] = 0x0;
+            i[9] = 0x0;
+            i[10] = 0x0;
+            i[11] = 0x5;
+            i[12] = 0x7E;
+            i[13] = 0x0;
+            i[14] = 0x0;
+            for (j = 0; j <= 14; j++)
+                i[15] = (byte) (i[15] ^ i[j]);
+            _msComm1.Write(i, 0, i.Length);
+            return default;
+        }
 
-        If Len(Hex(Pin)) < 4 Then
-            PinH = Mid(Hex(Pin), 1, 1)
-            PinL = Mid(Hex(Pin), 2, 2)
-        End If
+        public bool ReverseJog(int address)
+        {
+            var i = new byte[16];
+            int j;
+            i[0] = 0x2;
+            i[1] = 0xE;
+            i[2] = Convert.ToByte("&H" + address.ToString("X"));
+            i[3] = 0x0;
+            i[4] = 0x0;
+            i[5] = 0x0;
+            i[6] = 0x0;
+            i[7] = 0x0;
+            i[8] = 0x0;
+            i[9] = 0x0;
+            i[10] = 0x0;
+            i[11] = 0x6;
+            i[12] = 0x7E;
+            i[13] = 0x0;
+            i[14] = 0x0;
+            for (j = 0; j <= 14; j++)
+                i[15] = (byte) (i[15] ^ i[j]);
+            _msComm1.Write(i, 0, i.Length);
+            return default;
+        }
 
-        i(0) = &H2
-        i(1) = &HE
-        i(2) = "&H" & Hex(Address).ToString
-        i(3) = &H0
-        i(4) = &H0
-        i(5) = &H0
-        i(6) = &H0
-        i(7) = &H0
-        i(8) = &H0
-        i(9) = &H0
-        i(10) = &H0
+        public bool StopJog(int address)
+        {
+            var i = new byte[16];
+            int j;
+            i[0] = 0x2;
+            i[1] = 0xE;
+            i[2] = Convert.ToByte("&H" + address.ToString("X"));
+            i[3] = 0x0;
+            i[4] = 0x0;
+            i[5] = 0x0;
+            i[6] = 0x0;
+            i[7] = 0x0;
+            i[8] = 0x0;
+            i[9] = 0x0;
+            i[10] = 0x0;
+            i[11] = 0x4;
+            i[12] = 0x7E;
+            i[13] = 0x0;
+            i[14] = 0x0;
+            for (j = 0; j <= 14; j++)
+                i[15] = (byte) (i[15] ^ i[j]);
+            _msComm1.Write(i, 0, i.Length);
+            return default;
+        }
 
-        i(11) = &HC
-        i(12) = &H7F
-        i(13) = "&H" + PinH.ToString
-        i(14) = "&H" + PinL.ToString
-
-        For j = 0 To 14
-            i(15) = i(15) Xor i(j)
-        Next j
-        MSComm1.Write(i, 0, i.Length)
-    End Function
-
-    Public Function RunMMSOnJOGMode(ByVal Address As Integer) As Boolean
-        Dim i(15) As Byte
-        Dim j As Integer
-
-        i(0) = &H2
-        i(1) = &HE
-        i(2) = "&H" & Hex(Address).ToString
-
-        i(3) = &H0
-        i(4) = &H0
-        i(5) = &H0
-        i(6) = &H0
-        i(7) = &H0
-        i(8) = &H0
-        i(9) = &H0
-        i(10) = &H0
-
-        i(11) = &H5
-        i(12) = &H7E
-        i(13) = &H0
-        i(14) = &H0
-
-
-        For j = 0 To 14
-            i(15) = i(15) Xor i(j)
-        Next j
-        MSComm1.Write(i, 0, i.Length)
-
-    End Function
-
-    Public Function ReverseJOG(ByVal address As Integer) As Boolean
-        Dim i(15) As Byte
-        Dim j As Integer
-        i(0) = &H2
-        i(1) = &HE
-        i(2) = "&H" & Hex(address).ToString
-
-        i(3) = &H0
-        i(4) = &H0
-        i(5) = &H0
-        i(6) = &H0
-        i(7) = &H0
-        i(8) = &H0
-        i(9) = &H0
-        i(10) = &H0
-
-        i(11) = &H6
-        i(12) = &H7E
-        i(13) = &H0
-        i(14) = &H0
-
-        For j = 0 To 14
-            i(15) = i(15) Xor i(j)
-        Next j
-        MSComm1.Write(i, 0, i.Length)
-    End Function
-    Public Function StopJOG(ByVal address As Integer) As Boolean
-        Dim i(15) As Byte
-        Dim j As Integer
-        i(0) = &H2
-        i(1) = &HE
-        i(2) = "&H" & Hex(address).ToString
-
-        i(3) = &H0
-        i(4) = &H0
-        i(5) = &H0
-        i(6) = &H0
-        i(7) = &H0
-        i(8) = &H0
-        i(9) = &H0
-        i(10) = &H0
-
-        i(11) = &H4
-        i(12) = &H7E
-        i(13) = &H0
-        i(14) = &H0
-
-        For j = 0 To 14
-            i(15) = i(15) Xor i(j)
-        Next j
-        MSComm1.Write(i, 0, i.Length)
-    End Function
-
-    Public Function ReqParam(ByVal address As Integer) As Boolean
-        Dim i(15) As Byte
-        Dim j As Integer
-        i(0) = &H2
-        i(1) = &HE
-        i(2) = "&H" & Hex(address).ToString
-
-        i(3) = &H10
-        i(4) = &H3
-        i(5) = &H0
-        i(6) = &H0
-        i(7) = &H0
-        i(8) = &H3
-        i(9) = &H0
-        i(10) = &H0
-
-        i(11) = &H0
-        i(12) = &H0
-        i(13) = &H0
-        i(14) = &H0
-
-        For j = 0 To 14
-            i(15) = i(15) Xor i(j)
-        Next j
-
-        MSComm1.Write(i, 0, i.Length)
-    End Function
-
-End Class
+        public bool ReqParam(int address)
+        {
+            var i = new byte[16];
+            int j;
+            i[0] = 0x2;
+            i[1] = 0xE;
+            i[2] = Convert.ToByte("&H" + address.ToString("X"));
+            i[3] = 0x10;
+            i[4] = 0x3;
+            i[5] = 0x0;
+            i[6] = 0x0;
+            i[7] = 0x0;
+            i[8] = 0x3;
+            i[9] = 0x0;
+            i[10] = 0x0;
+            i[11] = 0x0;
+            i[12] = 0x0;
+            i[13] = 0x0;
+            i[14] = 0x0;
+            for (j = 0; j <= 14; j++)
+                i[15] = (byte) (i[15] ^ i[j]);
+            _msComm1.Write(i, 0, i.Length);
+            return default;
+        }
+    }
+}
